@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cardboard Box Stacker</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            touch-action: none;
+        }
+
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0e6d3;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            max-width: 600px;
+            height: 100vh;
+            max-height: 800px;
+            background-color: #e6d5b9;
+            border: 8px solid #8b7355;
+            border-radius: 10px;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #score-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: clamp(16px, 4vw, 24px);
+            color: #5d4037;
+            z-index: 10;
+        }
+
+        #timer {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: clamp(16px, 4vw, 24px);
+            color: #5d4037;
+            z-index: 10;
+        }
+
+        .box {
+            position: absolute;
+            width: clamp(60px, 15vw, 100px);
+            height: clamp(60px, 15vw, 100px);
+            background-color: #c4a484;
+            border: 4px solid #8b7355;
+            user-select: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: clamp(14px, 3vw, 20px);
+            color: #5d4037;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+            touch-action: none;
+        }
+
+        .box.active {
+            transform: scale(1.05);
+            z-index: 100;
+        }
+
+        #start-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: clamp(10px, 3vw, 15px) clamp(20px, 5vw, 30px);
+            font-size: clamp(18px, 4vw, 24px);
+            background-color: #8b7355;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            z-index: 20;
+        }
+
+        #start-button:hover {
+            background-color: #6d5a43;
+        }
+
+        .target-zone {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 30%;
+            background-color: rgba(139, 115, 85, 0.2);
+            border-top: 2px dashed #8b7355;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            color: #5d4037;
+            font-size: clamp(12px, 3vw, 16px);
+            width: 90%;
+            z-index: 10;
+        }
+
+        @media (max-height: 600px) {
+            #game-container {
+                max-height: 100vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="score-container">Score: <span id="score">0</span></div>
+        <div id="timer">Time: <span id="time">60</span>s</div>
+        <div class="target-zone"></div>
+        <button id="start-button">Start Game</button>
+        <div id="instructions">Drag or tap boxes into the brown zone!</div>
+    </div>
+
+    <script>
+        let score = 0;
+        let timeLeft = 60;
+        let gameInterval;
+        let isPlaying = false;
+        let boxCount = 1;
+        let activeBox = null;
+
+        const gameContainer = document.getElementById('game-container');
+        const scoreElement = document.getElementById('score');
+        const timeElement = document.getElementById('time');
+        const startButton = document.getElementById('start-button');
+
+        function createBox() {
+            const box = document.createElement('div');
+            box.className = 'box';
+            box.textContent = boxCount++;
+            
+            const boxSize = parseInt(getComputedStyle(box).width);
+            const maxX = gameContainer.offsetWidth - boxSize;
+            box.style.left = (Math.random() * maxX) + 'px';
+            box.style.top = '0px';
+
+            // Touch events
+            box.addEventListener('touchstart', handleTouchStart, { passive: false });
+            box.addEventListener('touchmove', handleTouchMove, { passive: false });
+            box.addEventListener('touchend', handleTouchEnd);
+
+            // Mouse events
+            box.addEventListener('mousedown', handleMouseStart);
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseEnd);
+
+            gameContainer.appendChild(box);
+            return box;
+        }
+
+        function handleTouchStart(e) {
+            if (!isPlaying) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            activeBox = this;
+            activeBox.classList.add('active');
+            const rect = activeBox.getBoundingClientRect();
+            activeBox.offsetX = touch.clientX - rect.left;
+            activeBox.offsetY = touch.clientY - rect.top;
+        }
+
+        function handleTouchMove(e) {
+            if (!isPlaying || !activeBox) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            moveBox(touch.clientX, touch.clientY);
+        }
+
+        function handleTouchEnd(e) {
+            if (!isPlaying || !activeBox) return;
+            checkPlacement();
+            activeBox.classList.remove('active');
+            activeBox = null;
+        }
+
+        function handleMouseStart(e) {
+            if (!isPlaying) return;
+            e.preventDefault();
+            activeBox = this;
+            activeBox.classList.add('active');
+            const rect = activeBox.getBoundingClientRect();
+            activeBox.offsetX = e.clientX - rect.left;
+            activeBox.offsetY = e.clientY - rect.top;
+        }
+
+        function handleMouseMove(e) {
+            if (!isPlaying || !activeBox) return;
+            e.preventDefault();
+            moveBox(e.clientX, e.clientY);
+        }
+
+        function handleMouseEnd() {
+            if (!isPlaying || !activeBox) return;
+            checkPlacement();
+            activeBox.classList.remove('active');
+            activeBox = null;
+        }
+
+        function moveBox(clientX, clientY) {
+            const rect = gameContainer.getBoundingClientRect();
+            const boxSize = parseInt(getComputedStyle(activeBox).width);
+            
+            let x = clientX - rect.left - activeBox.offsetX;
+            let y = clientY - rect.top - activeBox.offsetY;
+            
+            // Contain within boundaries
+            x = Math.max(0, Math.min(x, rect.width - boxSize));
+            y = Math.max(0, Math.min(y, rect.height - boxSize));
+            
+            activeBox.style.left = x + 'px';
+            activeBox.style.top = y + 'px';
+        }
+
+        function checkPlacement() {
+            const boxRect = activeBox.getBoundingClientRect();
+            const targetZone = document.querySelector('.target-zone').getBoundingClientRect();
+            
+            if (boxRect.bottom >= targetZone.top && 
+                boxRect.top <= targetZone.bottom &&
+                boxRect.left >= targetZone.left &&
+                boxRect.right <= targetZone.right) {
+                score += 10;
+                scoreElement.textContent = score;
+                activeBox.style.backgroundColor = '#90a959';
+                createBox();
+            }
+        }
+
+        function startGame() {
+            if (isPlaying) return;
+            
+            isPlaying = true;
+            score = 0;
+            timeLeft = 60;
+            boxCount = 1;
+            
+            scoreElement.textContent = score;
+            timeElement.textContent = timeLeft;
+            startButton.style.display = 'none';
+            
+            // Clear existing boxes
+            const boxes = document.querySelectorAll('.box');
+            boxes.forEach(box => box.remove());
+            
+            createBox();
+
+            gameInterval = setInterval(() => {
+                timeLeft--;
+                timeElement.textContent = timeLeft;
+                
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function endGame() {
+            isPlaying = false;
+            clearInterval(gameInterval);
+            alert(`Game Over! Your score: ${score}`);
+            startButton.style.display = 'block';
+        }
+
+        startButton.addEventListener('click', startGame);
+        startButton.addEventListener('touchstart', startGame);
+
+        // Prevent scrolling while playing
+        document.body.addEventListener('touchmove', function(e) {
+            if (isPlaying) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+    </script>
+</body>
+</html>
